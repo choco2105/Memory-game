@@ -22,22 +22,13 @@ function generateBalancedNumbersWithValidSum(target: number, selections: number)
     allNumbers.push(randomNum)
   }
 
-  return shuffleArray(allNumbers)
+  return allNumbers.sort(() => Math.random() - 0.5)
 }
 
-function shuffleArray(array: number[]) {
-  return array.sort(() => Math.random() - 0.5)
-}
-
-const levels = Array.from({ length: 20 }, (_, i) => {
-  const target = i < 10 ? 5 + i * 2 : 10 + (i - 10) * 5
-  const requiredSelections = i < 10 ? 2 : 3
-  return {
-    target,
-    numbers: generateBalancedNumbersWithValidSum(target, requiredSelections),
-    requiredSelections,
-  }
-})
+const INITIAL_LEVELS = Array.from({ length: 20 }, (_, i) => ({
+  target: i < 10 ? 5 + i * 2 : 10 + (i - 10) * 5,
+  requiredSelections: i < 10 ? 2 : 3,
+}))
 
 export default function SumGame() {
   const router = useRouter()
@@ -46,45 +37,35 @@ export default function SumGame() {
   const [selectedIndices, setSelectedIndices] = useState<number[]>([])
   const [message, setMessage] = useState('')
   const [timeRemaining, setTimeRemaining] = useState(30)
-  const [numbers, setNumbers] = useState(levels[0].numbers)
+  const [numbers, setNumbers] = useState<number[]>([])
+  const [isLoading, setIsLoading] = useState(true)
 
-  const currentLevel = levels[level]
-  
-  // Si no hay nivel actual, redirigir a la pantalla de victoria
+  const currentLevel = INITIAL_LEVELS[level]
+  const { target = 0, requiredSelections = 2 } = currentLevel || {}
+
   useEffect(() => {
     if (!currentLevel) {
       router.push('/win')
       return
     }
-  }, [currentLevel, router])
-
-  // Si no hay nivel actual, no renderizar el juego
-  if (!currentLevel) return null
-
-  const { target, requiredSelections } = currentLevel
-
-  useEffect(() => {
-    if (level >= levels.length) {
-      router.push('/win')
-      return
-    }
-    setSelectedIndices([])
-    setMessage('')
-    setTimeRemaining(30)
-    setNumbers(levels[level].numbers)
-  }, [level])
+    
+    setNumbers(generateBalancedNumbersWithValidSum(target, requiredSelections))
+    setIsLoading(false)
+  }, [level, currentLevel, target, requiredSelections, router])
 
   useEffect(() => {
     const timer = setInterval(() => {
       setTimeRemaining((prev) => {
         if (prev <= 1) {
-          setLives((lives) => lives - 1)
-          if (lives - 1 <= 0) {
-            clearInterval(timer)
-            router.push('/lose')
-          } else {
-            resetSelections()
-          }
+          setLives((prevLives) => {
+            const newLives = prevLives - 1
+            if (newLives <= 0) {
+              router.push('/lose')
+            } else {
+              resetGame()
+            }
+            return newLives
+          })
           return 30
         }
         return prev - 1
@@ -92,7 +73,35 @@ export default function SumGame() {
     }, 1000)
 
     return () => clearInterval(timer)
-  }, [lives])
+  }, [router])
+
+  useEffect(() => {
+    if (selectedIndices.length === requiredSelections) {
+      const sum = selectedIndices.reduce((acc, index) => acc + numbers[index], 0)
+      if (sum === target) {
+        setMessage('¡Correcto! Pasando al siguiente nivel...')
+        const timer = setTimeout(() => {
+          if (level + 1 >= INITIAL_LEVELS.length) {
+            router.push('/win')
+          } else {
+            setLevel(level + 1)
+          }
+        }, 1000)
+        return () => clearTimeout(timer)
+      } else {
+        setMessage('Incorrecto, intenta de nuevo.')
+        setLives(prev => {
+          const newLives = prev - 1
+          if (newLives <= 0) {
+            router.push('/lose')
+          } else {
+            resetGame()
+          }
+          return newLives
+        })
+      }
+    }
+  }, [selectedIndices, numbers, target, level, requiredSelections, router])
 
   const handleNumberPress = (index: number) => {
     if (selectedIndices.length < requiredSelections && !selectedIndices.includes(index)) {
@@ -100,35 +109,17 @@ export default function SumGame() {
     }
   }
 
-  useEffect(() => {
-    if (selectedIndices.length === requiredSelections) {
-      const sum = selectedIndices.reduce((acc, index) => acc + numbers[index], 0)
-      if (sum === target) {
-        setMessage('¡Correcto! Pasando al siguiente nivel...')
-        setTimeout(() => {
-          if (level + 1 >= levels.length) {
-            router.push('/win')
-          } else {
-            setLevel(level + 1)
-          }
-        }, 1000)
-      } else {
-        setMessage('Incorrecto, intenta de nuevo.')
-        setLives((prevLives) => prevLives - 1)
-        if (lives - 1 > 0) {
-          resetSelections()
-          setNumbers(generateBalancedNumbersWithValidSum(target, requiredSelections))
-        } else {
-          router.push('/lose')
-        }
-      }
-    }
-  }, [selectedIndices])
-
-  const resetSelections = () => {
+  const resetGame = () => {
     setSelectedIndices([])
     setTimeRemaining(30)
     setMessage('')
+    setNumbers(generateBalancedNumbersWithValidSum(target, requiredSelections))
+  }
+
+  if (isLoading) {
+    return <div className="min-h-screen flex items-center justify-center">
+      <p className="text-2xl">Cargando...</p>
+    </div>
   }
 
   return (
@@ -142,7 +133,7 @@ export default function SumGame() {
 
       <div className="w-full bg-[#008080] text-white p-5 flex justify-between items-center mb-8">
         <div className="text-lg font-bold">
-          Nivel: {'⭐'.repeat(level + 1)}{'☆'.repeat(Math.max(0, levels.length - level - 1))}
+          Nivel: {'⭐'.repeat(level + 1)}{'☆'.repeat(Math.max(0, INITIAL_LEVELS.length - level - 1))}
         </div>
         <div className="text-lg font-bold">
           Vidas: {'❤️'.repeat(lives)}
@@ -159,7 +150,7 @@ export default function SumGame() {
       <div className="flex flex-wrap justify-center max-w-2xl gap-4">
         {numbers.map((number, index) => (
           <button
-            key={index}
+            key={`${level}-${index}-${number}`}
             onClick={() => handleNumberPress(index)}
             className={`w-20 h-20 rounded-lg flex items-center justify-center text-3xl font-bold text-white transition-colors ${
               selectedIndices.includes(index)

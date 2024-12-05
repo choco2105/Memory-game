@@ -44,7 +44,7 @@ export default function MemoryGame() {
   }
 
   useEffect(() => {
-    if (selectedIndices.length === 2) {
+    if (selectedIndices.length === 2 && !showingCards) {
       const [first, second] = selectedIndices
       if (LEVELS[level].cards[first] === LEVELS[level].cards[second]) {
         setMatchedIndices([...matchedIndices, first, second])
